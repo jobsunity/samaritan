@@ -1,0 +1,79 @@
+from flask import Flask, render_template, request, redirect, url_for, session
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+import os
+import secrets
+from fpdf import FPDF
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = secrets.token_hex(16)  
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///login_details.db' 
+db = SQLAlchemy(app)
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+@app.route('/', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        email = request.form.get('email')
+
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password):
+            # Generate a PDF file with a link
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=15)
+            pdf.cell(200, 10, txt="Welcome, " + username + "!", ln=True, align='C')
+            pdf.cell(200, 10, txt="Please click on the link to access the dashboard:", ln=True, align='C')
+            pdf.link(10, 10, 100, 25, "http://example.com/dashboard", "Dashboard")
+            pdf.output("login.pdf")
+
+            # Store user details in the session
+            session['logged_in'] = True
+            session['username'] = username
+            session['email'] = email  
+
+            return "PDF file generated successfully. Please check your downloads."
+        else:
+            return "Incorrect username or password." 
+    return render_template('login.html')
+
+@app.route('/dashboard')
+def dashboard():
+    if 'logged_in' in session and session['logged_in']:
+        # Retrieve user details from the session
+        username = session['username']
+        email = session['email']
+
+        # You probably want to fetch more user data from DB to display dynamically here
+        # Example:
+        # user = User.query.filter_by(username=username).first() 
+        # display it using `user.some_field`
+
+        return f"Welcome, {username}! Your email is {email}."
+    else:
+        # Redirection to login if not logged in
+        return redirect(url_for('login'))
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)  
+    session.pop('username', None)
+    session.pop('email', None)
+    return redirect(url_for('login'))
+
+
+if __name__ == '__main__':
+    app.run(debug=True) 
